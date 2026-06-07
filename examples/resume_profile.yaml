@@ -1,0 +1,22 @@
+{
+  "name": "AI 应用方向候选人",
+  "target_role": "大模型应用开发工程师",
+  "target_dimensions": ["concept", "system_design", "debugging", "evaluation"],
+  "highlights": [
+    "做过基于 RAG 的企业知识库问答 Demo",
+    "熟悉 Python、向量检索、Prompt Engineering",
+    "希望补强 Agent 工程化与多 Agent 隔离经验"
+  ],
+  "projects": [
+    {
+      "name": "Resume RAG Assistant",
+      "stack": ["Python", "Embeddings", "Vector Search", "FastAPI"],
+      "notes": "将简历、项目经历和岗位 JD 切块后检索，生成个性化面试题。"
+    },
+    {
+      "name": "Agent Harness Study",
+      "stack": ["Python", "Memory", "Skills", "MCP"],
+      "notes": "研究 PLAN-EXECUTE-VERIFY、工具白名单和 transcript 复盘。"
+    }
+  ]
+}

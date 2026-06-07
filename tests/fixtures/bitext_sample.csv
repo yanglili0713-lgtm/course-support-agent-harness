@@ -1,0 +1,5 @@
+flags,instruction,category,intent,response
+BQ,can you help me cancel order {{Order Number}}?,ORDER,cancel_order,Please log into {{Online Company Portal Info}} and open your orders page to cancel order {{Order Number}}.
+BI,what should I do about invoice {{Invoice Number}}?,PAYMENT,invoice_request,Please open the billing section of {{Online Company Portal Info}} and review invoice {{Invoice Number}}.
+BQ,can you help me cancel order {{Order Number}}?,ORDER,cancel_order,Please log into {{Online Company Portal Info}} and open your orders page to cancel order {{Order Number}}.
+

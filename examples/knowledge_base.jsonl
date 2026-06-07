@@ -1,0 +1,8 @@
+{"id":"rag-001","text":"RAG 的基础链路包括文档切分、Embedding、向量检索、上下文拼接和生成。工程上需要关注召回质量、证据可追溯性和回答忠实度。","metadata":{"topic":"rag","difficulty":"mid","dimension":"concept"}}
+{"id":"rag-002","text":"Metadata Filter 可以在向量相似度之外加入主题、来源、时间、权限、难度等结构化约束，减少不相关上下文进入提示词。","metadata":{"topic":"rag","difficulty":"mid","dimension":"system_design"}}
+{"id":"rag-003","text":"RAG 去重常见策略包括按 chunk id、文档 id、文本 hash 或相似度阈值合并，避免重复证据挤占上下文窗口。","metadata":{"topic":"rag","difficulty":"mid","dimension":"debugging"}}
+{"id":"rag-004","text":"难度重排可以把符合候选人目标难度的 chunk 前置，同时保留少量相邻难度材料，帮助题目既有挑战又不过度跳跃。","metadata":{"topic":"rag","difficulty":"mid","dimension":"evaluation"}}
+{"id":"rag-005","text":"评估 RAG 不只看最终回答，还要分别评估 retrieval precision、answer faithfulness、context relevance 和人工可解释错误样例。","metadata":{"topic":"rag","difficulty":"mid","dimension":"evaluation"}}
+{"id":"agent-001","text":"Agent Harness 应把控制流、工具权限、记忆写入和状态转移放在确定性代码里，LLM 只负责生成候选文本。","metadata":{"topic":"agent","difficulty":"mid","dimension":"concept"}}
+{"id":"rag-006","text":"高级 RAG 会引入 query rewrite、多路召回、reranker、反馈学习和在线监控，但每一层都需要可复盘的日志。","metadata":{"topic":"rag","difficulty":"hard","dimension":"tradeoff"}}
+

@@ -1,0 +1,10 @@
+{
+  "source_name": "bitext_customer_support",
+  "source_url": "https://huggingface.co/datasets/bitext/Bitext-customer-support-llm-chatbot-training-dataset",
+  "raw_csv_url": "https://huggingface.co/datasets/bitext/Bitext-customer-support-llm-chatbot-training-dataset/resolve/main/Bitext_Sample_Customer_Support_Training_Dataset_27K_responses-v11.csv",
+  "license": "cdla-sharing-1.0",
+  "allowed_use": "public customer-support utterance examples; do not treat as private business logs",
+  "privacy_boundary": "importer filters obvious emails/phone-like strings; synthetic order data stays separate",
+  "rows_imported": 500,
+  "output_jsonl": "examples\\public_support_utterances.jsonl"
+}

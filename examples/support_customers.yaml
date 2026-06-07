@@ -1,0 +1,46 @@
+{
+  "users": {
+    "u_1001": {
+      "email_masked": "li***@example.com",
+      "verified": true,
+      "risk_flags": []
+    },
+    "u_2002": {
+      "email_masked": "wa***@example.com",
+      "verified": false,
+      "risk_flags": ["identity_unverified"]
+    }
+  },
+  "orders": [
+    {
+      "order_id": "ord_rag_20260601_8899",
+      "user_id": "u_1001",
+      "course_id": "course_rag_advanced",
+      "course_name": "RAG 工程实战课",
+      "status": "paid",
+      "days_since_purchase": 1,
+      "progress_percent": 12,
+      "invoice_state": "not_requested"
+    },
+    {
+      "order_id": "ord_agent_20260520_1122",
+      "user_id": "u_1001",
+      "course_id": "course_agent_harness",
+      "course_name": "Agent Harness 项目课",
+      "status": "paid",
+      "days_since_purchase": 18,
+      "progress_percent": 45,
+      "invoice_state": "issued"
+    },
+    {
+      "order_id": "ord_rag_20260602_7788",
+      "user_id": "u_2002",
+      "course_id": "course_rag_advanced",
+      "course_name": "RAG 工程实战课",
+      "status": "paid",
+      "days_since_purchase": 2,
+      "progress_percent": 5,
+      "invoice_state": "not_requested"
+    }
+  ]
+}

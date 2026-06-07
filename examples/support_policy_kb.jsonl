@@ -1,0 +1,7 @@
+{"id":"support-refund-001","text":"退款政策：付费课程购买 7 天内且学习进度不超过 20% 时，可以进入退款审核；超过任一条件不能直接承诺退款，必须创建人工审核或说明原因。","metadata":{"topic":"support","policy_topic":"refund","difficulty":"any","risk":"high"}}
+{"id":"support-refund-002","text":"用户用退款表达不满时，客服 Agent 必须先识别真实诉求。如果用户主要描述课程打不开、无法进入、看不了，应优先走访问恢复流程，而不是直接进入退款流程。","metadata":{"topic":"support","policy_topic":"refund","difficulty":"any","risk":"high"}}
+{"id":"support-access-001","text":"访问恢复：只有在当前用户身份已验证且存在当前用户自己的 paid 订单时，才能刷新课程访问权限；刷新后建议用户重新登录并等待 10 分钟。","metadata":{"topic":"support","policy_topic":"access","difficulty":"any","risk":"medium"}}
+{"id":"support-identity-001","text":"身份校验：涉及订单、发票、退款、访问恢复、账号安全时，必须通过 customer_lookup 确认当前用户已验证；回答中只能展示脱敏邮箱和脱敏订单号。","metadata":{"topic":"support","policy_topic":"identity","difficulty":"any","risk":"high"}}
+{"id":"support-invoice-001","text":"发票政策：发票只针对当前用户自己的 paid 订单处理。若 invoice_state 为 not_requested，可提示用户提交抬头；若为 issued，只能说明已开具状态。","metadata":{"topic":"support","policy_topic":"invoice","difficulty":"any","risk":"medium"}}
+{"id":"support-security-001","text":"账号安全：出现盗号、邮箱被改、异常登录等信号时，不允许直接修改敏感资料，应创建安全工单并建议用户重置密码、检查登录设备。","metadata":{"topic":"support","policy_topic":"security","difficulty":"any","risk":"high"}}
+{"id":"support-escalation-001","text":"升级人工：当路由置信度低、身份未验证、工具失败、政策证据缺失或用户要求人工时，应创建 escalation_ticket，并在回复里说明已进入人工复核。","metadata":{"topic":"support","policy_topic":"escalation","difficulty":"any","risk":"low"}}
