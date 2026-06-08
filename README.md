@@ -268,3 +268,21 @@ type runs\eval_course_support\failure_reason_summary.csv
 
 See `docs/resume_project.md` for a resume-ready version. The resume version keeps the same truth boundary:
 100 deterministic cases, synthetic mock data, local evaluation, and no production claims.
+
+## Demo Screenshots
+
+### Agent Harness Demo
+
+<img src="docs/assets/eduguard_agent_demo.png" alt="Agent Harness Demo" width="900">
+
+### Risk Evaluation Dashboard
+
+<img src="docs/assets/eduguard_risk_dashboard.png" alt="Risk Evaluation Dashboard" width="900">
+
+### Transcript Replay
+
+<img src="docs/assets/eduguard_transcript_replay.png" alt="Transcript Replay" width="900">
+
+### Failure Analysis
+
+<img src="docs/assets/eduguard_failure_analysis.png" alt="Failure Analysis" width="900">
