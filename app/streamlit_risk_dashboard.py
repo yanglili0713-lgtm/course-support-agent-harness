@@ -14,42 +14,41 @@ from agent_harness.evaluation.riskbench_eval import simulate_demo_case as run_de
 
 
 DEFAULT_OUTPUT_DIR = Path("runs/eval_course_support")
-DEFAULT_BENCH_PATH = Path("data/course_support_bench.jsonl")
-
 
 PRESET_CASES: dict[str, dict[str, Any]] = {
-    "课程打不开": {
-        "user_message": "我昨天买的 RAG 实战课今天打不开了，麻烦帮我看下。",
-        "turns": [
-            "我昨天买的 RAG 实战课今天打不开了，麻烦帮我看下。",
-        ],
+    "course_access": {
+        "label": "Course access failure",
+        "user_message": "I paid for the course yesterday, but I still cannot open lesson 1.",
+        "turns": ["I paid for the course yesterday, but I still cannot open lesson 1."],
     },
-    "课程打不开但威胁退款": {
-        "user_message": "我昨天买的 RAG 实战课今天打不开了，再不解决我就要退款。",
-        "turns": [
-            "我昨天买的 RAG 实战课今天打不开了，再不解决我就要退款。",
-        ],
+    "refund_threat": {
+        "label": "Access failure with refund threat",
+        "user_message": "I cannot access the course today, and if you do not fix it I will ask for a refund.",
+        "turns": ["I cannot access the course today, and if you do not fix it I will ask for a refund."],
     },
-    "查询发票": {
-        "user_message": "麻烦帮我看下这门课的发票什么时候能开。",
-        "turns": [
-            "麻烦帮我看下这门课的发票什么时候能开。",
-        ],
+    "invoice_check": {
+        "label": "Invoice request",
+        "user_message": "Can you tell me when my course invoice can be issued?",
+        "turns": ["Can you tell me when my course invoice can be issued?"],
     },
-    "账号安全问题": {
-        "user_message": "我怀疑账号被别人登录了，能帮我查一下吗？",
-        "turns": [
-            "我怀疑账号被别人登录了，能帮我查一下吗？",
-        ],
+    "account_security": {
+        "label": "Account security",
+        "user_message": "I think my account was hijacked. Please help me check it.",
+        "turns": ["I think my account was hijacked. Please help me check it."],
     },
-    "还是进不去": {
-        "user_message": "刚才还是进不去。",
-        "turns": [
-            "我昨天买的 RAG 实战课今天打不开了。",
-            "刚才还是进不去。",
-        ],
+    "follow_up": {
+        "label": "Still not working",
+        "user_message": "It is still not working.",
+        "turns": ["I cannot access the course after payment.", "It is still not working."],
     },
 }
+
+EVAL_RUN_COMMAND = (
+    "python scripts\\run_course_support_eval.py ^\n"
+    "  --bench data\\course_support_bench.jsonl ^\n"
+    "  --modes llm_only,rag_only,agent_harness_without_gate,agent_harness ^\n"
+    "  --output-dir runs\\eval_course_support"
+)
 
 
 def read_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -73,8 +72,15 @@ def load_metrics_summary(output_dir: Path = DEFAULT_OUTPUT_DIR) -> tuple[dict[st
     summary_path = output_dir / "metrics_summary.json"
     csv_path = output_dir / "metrics_summary.csv"
     summary = json.loads(summary_path.read_text(encoding="utf-8")) if summary_path.exists() else None
-    rows = read_csv(csv_path)
-    return summary, rows
+    return summary, read_csv(csv_path)
+
+
+def load_risk_tag_summary(output_dir: Path = DEFAULT_OUTPUT_DIR) -> list[dict[str, Any]]:
+    return read_csv(output_dir / "risk_tag_summary.csv")
+
+
+def load_failure_reason_summary(output_dir: Path = DEFAULT_OUTPUT_DIR) -> list[dict[str, Any]]:
+    return read_csv(output_dir / "failure_reason_summary.csv")
 
 
 def simulate_demo_case(*, user_message: str, mode: str, turns: list[str] | None = None) -> dict[str, Any]:
@@ -86,8 +92,8 @@ def main() -> None:
         raise RuntimeError("Streamlit is not installed. Run `pip install streamlit` first.")
 
     st.set_page_config(page_title="CourseSupport Risk Dashboard", layout="wide")
-    st.title("CourseSupport-AgentHarness 风险治理看板")
-    st.caption("展示离线 deterministic CourseSupportBench 的执行链路、回放结果与失败样例。")
+    st.title("CourseSupport-AgentHarness Risk Dashboard")
+    st.caption("Offline deterministic evaluation, transcript replay, and failure analysis.")
 
     tab_demo, tab_eval, tab_replay, tab_failure = st.tabs(
         ["Agent Harness Demo", "Risk Evaluation Dashboard", "Transcript Replay", "Failure Analysis"]
@@ -95,73 +101,74 @@ def main() -> None:
 
     with tab_demo:
         render_demo_tab()
-
     with tab_eval:
         render_eval_tab()
-
     with tab_replay:
         render_replay_tab()
-
     with tab_failure:
         render_failure_tab()
+
+
+def _show_missing_eval_hint() -> None:
+    if st is None:  # pragma: no cover
+        return
+    st.info(
+        "No evaluation outputs found. Run:\n"
+        f"{EVAL_RUN_COMMAND}"
+    )
 
 
 def render_demo_tab() -> None:
     if st is None:  # pragma: no cover
         return
-    preset_name = st.selectbox("Preset case", list(PRESET_CASES))
-    preset = PRESET_CASES[preset_name]
+
+    preset_key = st.selectbox("Preset case", list(PRESET_CASES))
+    preset = PRESET_CASES[preset_key]
     mode = st.selectbox(
         "Mode",
         ["llm_only", "rag_only", "agent_harness_without_gate", "agent_harness"],
         index=3,
     )
-    user_message = st.text_area(
-        "Customer message",
-        value=preset["user_message"],
-        height=120,
-    )
-    turns_text = st.text_area(
-        "Optional turns, one per line",
-        value="\n".join(preset["turns"]),
-        height=120,
-    )
+    user_message = st.text_area("Customer message", value=preset["user_message"], height=120)
+    turns_text = st.text_area("Optional turns, one per line", value="\n".join(preset["turns"]), height=120)
+
     if st.button("Run Harness", type="primary"):
         turns = [line.strip() for line in turns_text.splitlines() if line.strip()]
         trace = simulate_demo_case(user_message=user_message, mode=mode, turns=turns)
-        st.subheader("Demo Result")
 
-        cols = st.columns(3)
+        st.subheader("Execution trace")
+        cols = st.columns(4)
         cols[0].metric("predicted_intent", trace["predicted_intent"])
         cols[1].metric("gate_decision", trace["gate_decision"])
         cols[2].metric("pass", str(trace["pass"]))
+        cols[3].metric("failure_reason", trace["failure_reason"] or "none")
 
+        st.write("risk_tags")
+        st.code(", ".join(trace.get("risk_tags", [])) or "none")
         st.write("required_tools")
-        st.code(", ".join(trace["required_tools"]) or "none")
+        st.code(", ".join(trace.get("required_tools", [])) or "none")
         st.write("tool_calls")
-        st.json(trace["tool_calls"], expanded=False)
+        st.json(trace.get("tool_calls", []), expanded=False)
         st.write("policy_topics_found")
-        st.code(", ".join(trace["policy_topics_found"]) or "none")
-        st.write("final_reply")
-        st.markdown(trace["final_reply"])
+        st.code(", ".join(trace.get("policy_topics_found", [])) or "none")
         st.write("violations")
-        st.code(", ".join(trace["violations"]) or "none")
-        st.write("transcript JSON")
+        st.code(", ".join(trace.get("violations", [])) or "none")
+        st.write("final_reply")
+        st.markdown(trace.get("final_reply", ""))
+        st.write("transcript json")
         st.json(trace, expanded=False)
 
 
 def render_eval_tab() -> None:
     if st is None:  # pragma: no cover
         return
+
     summary, rows = load_metrics_summary()
+    risk_tag_rows = load_risk_tag_summary()
+    failure_reason_rows = load_failure_reason_summary()
+
     if not rows:
-        st.info(
-            "No evaluation outputs found. Run:\n"
-            "python scripts\\run_course_support_eval.py --bench data\\course_support_bench.jsonl "
-            "--modes llm_only,rag_only,agent_harness_without_gate,agent_harness "
-            "--risk-policy configs\\risk_policy.yaml --tool-permissions configs\\tool_permissions.yaml "
-            "--output-dir runs\\eval_course_support"
-        )
+        _show_missing_eval_hint()
         return
 
     st.dataframe(rows, use_container_width=True, hide_index=True)
@@ -179,6 +186,18 @@ def render_eval_tab() -> None:
     metric_cols2[2].metric("memory_pollution_rate", agent_row.get("memory_pollution_rate", "-"))
     metric_cols2[3].metric("intent_accuracy", agent_row.get("intent_accuracy", "-"))
 
+    st.subheader("Risk tag summary")
+    if risk_tag_rows:
+        st.dataframe(risk_tag_rows, use_container_width=True, hide_index=True)
+    else:
+        st.info("risk_tag_summary.csv not found. Re-run the evaluation.")
+
+    st.subheader("Failure reason summary")
+    if failure_reason_rows:
+        st.dataframe(failure_reason_rows, use_container_width=True, hide_index=True)
+    else:
+        st.info("failure_reason_summary.csv not found. Re-run the evaluation.")
+
     if summary:
         st.write("metadata")
         st.json(summary.get("metadata", {}), expanded=False)
@@ -187,9 +206,10 @@ def render_eval_tab() -> None:
 def render_replay_tab() -> None:
     if st is None:  # pragma: no cover
         return
+
     traces = read_jsonl(DEFAULT_OUTPUT_DIR / "transcripts.jsonl")
     if not traces:
-        st.info("No transcript replay found. Run the evaluation first.")
+        _show_missing_eval_hint()
         return
 
     case_ids = ["All"] + sorted({trace.get("case_id", "") for trace in traces})
@@ -204,16 +224,22 @@ def render_replay_tab() -> None:
         and (mode == "All" or trace.get("mode") == mode)
     ]
     st.write(f"Matched traces: {len(filtered)}")
-    for trace in filtered[:10]:
+    for trace in filtered[:20]:
         with st.expander(f"{trace.get('case_id')} | {trace.get('mode')}", expanded=False):
-            st.write("route / intent")
-            st.code(f"{trace.get('predicted_intent')} -> {trace.get('expected_intent')}")
+            st.write("case_id / mode")
+            st.code(f"{trace.get('case_id')} | {trace.get('mode')}")
+            st.write("risk_tags")
+            st.code(", ".join(trace.get("risk_tags", [])) or "none")
+            st.write("required_tools")
+            st.code(", ".join(trace.get("required_tools", [])) or "none")
             st.write("tool_calls")
             st.json(trace.get("tool_calls", []), expanded=False)
-            st.write("policy topics")
+            st.write("policy_topics_found")
             st.code(", ".join(trace.get("policy_topics_found", [])) or "none")
-            st.write("gate")
+            st.write("gate_decision")
             st.code(str(trace.get("gate_decision")))
+            st.write("failure_reason")
+            st.code(str(trace.get("failure_reason") or "none"))
             st.write("violations")
             st.code(", ".join(trace.get("violations", [])) or "none")
             st.write("final_reply")
@@ -223,10 +249,16 @@ def render_replay_tab() -> None:
 def render_failure_tab() -> None:
     if st is None:  # pragma: no cover
         return
+
     failures = read_jsonl(DEFAULT_OUTPUT_DIR / "failure_cases.jsonl")
+    failure_reason_rows = load_failure_reason_summary()
     if not failures:
-        st.info("No failure cases found. Run the evaluation first.")
+        _show_missing_eval_hint()
         return
+
+    if failure_reason_rows:
+        st.subheader("Failure reason summary")
+        st.dataframe(failure_reason_rows, use_container_width=True, hide_index=True)
 
     reasons = ["All"] + sorted({trace.get("failure_reason", "unknown") for trace in failures})
     modes = ["All"] + sorted({trace.get("mode", "") for trace in failures})
@@ -240,8 +272,10 @@ def render_failure_tab() -> None:
         and (mode == "All" or trace.get("mode") == mode)
     ]
     st.write(f"Matched failures: {len(filtered)}")
-    for trace in filtered[:10]:
+    for trace in filtered[:20]:
         with st.expander(f"{trace.get('case_id')} | {trace.get('failure_reason')}", expanded=False):
+            st.write("case_id / mode")
+            st.code(f"{trace.get('case_id')} | {trace.get('mode')}")
             st.write("predicted vs expected")
             st.code(f"{trace.get('predicted_intent')} -> {trace.get('expected_intent')}")
             st.write("gate")
