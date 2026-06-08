@@ -92,8 +92,8 @@ def main() -> None:
         raise RuntimeError("Streamlit is not installed. Run `pip install streamlit` first.")
 
     st.set_page_config(page_title="CourseSupport Risk Dashboard", layout="wide")
-    st.title("CourseSupport-AgentHarness Risk Dashboard")
-    st.caption("Offline deterministic evaluation, transcript replay, and failure analysis.")
+    st.title("EduGuard-Agent Risk Dashboard")
+    st.caption("Offline deterministic evaluation, risk governance, transcript replay, and failure analysis.")
 
     tab_demo, tab_eval, tab_replay, tab_failure = st.tabs(
         ["Agent Harness Demo", "Risk Evaluation Dashboard", "Transcript Replay", "Failure Analysis"]
