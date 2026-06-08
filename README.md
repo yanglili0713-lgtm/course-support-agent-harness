@@ -17,6 +17,7 @@ The target scenario is an online course platform support workflow. The risky cas
 - account security and PII exposure risks
 - human escalation and ticket grounding
 - multi-turn memory pollution, such as "it still does not work" or intent switching
+- hard-negative failure cases, such as tool failure, policy conflict, missing orders, and unsafe commitments under failure
 
 The key design goal is to stop the model from making unsupported business commitments. The model can draft a
 reply, but the harness decides whether the reply is grounded enough to allow, replan, block, escalate, or halt.
@@ -65,16 +66,20 @@ CourseSupportBench path is intentionally deterministic and offline for repeatabl
 
 ## CourseSupportBench
 
-`data/course_support_bench.jsonl` now contains 80 deterministic cases:
+`data/course_support_bench.jsonl` now contains 100 deterministic cases:
 
-- 14 access-related cases
-- 13 refund-related cases
-- 12 invoice-related cases
+- 20 access-related cases
+- 19 refund-commitment cases
+- 17 invoice-related cases
 - 9 account-security cases
-- 8 human-escalation cases
+- 12 ticket-grounding cases
 - 7 PII/raw-id leakage cases
-- 7 no-tool-grounding cases
+- 10 no-tool-grounding cases
 - 10 memory-stress cases
+- 11 tool-failure cases
+- 9 policy-conflict cases
+- 7 order-not-found cases
+- 18 unsafe-commitment-under-failure cases
 
 Every case includes `case_id`, `user_message`, `turns`, `expected_intent`, `risk_tags`, and
 `expected_gate_action`. Cases may also override required tools, policy topics, and forbidden claims. If a case
@@ -102,7 +107,7 @@ The benchmark compares four deterministic modes:
 
 - `llm_only`: no RAG, no tools, no gate; simulates direct unsupported answers
 - `rag_only`: policy evidence is available, but tool grounding is not enforced
-- `agent_harness_without_gate`: tools and policy are available, but the final Risk Gate is disabled
+- `agent_harness_without_gate`: tools and policy are available, but the final Risk Gate is disabled; this mode still over-commits in failure/conflict cases
 - `agent_harness`: full Router / Monitor / Resolver, MCP-like tool gateway, policy matrix, Risk Gate, and memory handling
 
 No separate `agent_harness_without_memory` mode is added. Memory behavior is evaluated through the 10 memory
@@ -131,18 +136,20 @@ Additional outputs:
 
 ## Results
 
-The numbers below are from the deterministic local CourseSupportBench run on 80 synthetic cases. They are not
+The numbers below are from the deterministic local CourseSupportBench run on 100 synthetic cases. They are not
 online production metrics.
 
 | Mode | pass_rate | intent_accuracy | tool_grounding_rate | policy_coverage_rate | risk_violation_rate | gate_action_accuracy | memory_pollution_rate |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| `llm_only` | 0.00 | 0.9375 | 0.00 | 0.00 | 1.00 | 0.3125 | 0.50 |
-| `rag_only` | 0.00 | 0.9375 | 0.00 | 1.00 | 1.00 | 0.3125 | 0.50 |
-| `agent_harness_without_gate` | 0.00 | 1.00 | 1.00 | 1.00 | 1.00 | 0.3125 | 0.00 |
+| `llm_only` | 0.00 | 0.96 | 0.00 | 0.00 | 1.00 | 0.25 | 0.40 |
+| `rag_only` | 0.00 | 0.96 | 0.00 | 1.00 | 1.00 | 0.25 | 0.40 |
+| `agent_harness_without_gate` | 0.00 | 1.00 | 1.00 | 1.00 | 1.00 | 0.25 | 0.00 |
 | `agent_harness` | 1.00 | 1.00 | 1.00 | 1.00 | 0.00 | 1.00 | 0.00 |
 
 The full Agent Harness reduced `risk_violation_rate` from 1.00 in the baseline modes to 0.00, reached
 `tool_grounding_rate = 1.00`, `policy_coverage_rate = 1.00`, and `gate_action_accuracy = 1.00`.
+The `agent_harness_without_gate` ablation shows that tool and policy hits alone are not enough: without the final
+Risk Gate, it still reaches `false_commitment_rate = 1.00` on failure/conflict drafts.
 
 ## Risk Tag Breakdown
 
@@ -151,23 +158,27 @@ Selected risk tag counts and full-harness results:
 | risk_tag | case_count | agent_harness pass_rate | agent_harness risk_violation_rate |
 | --- | ---: | ---: | ---: |
 | `tool_required` | 34 | 1.00 | 0.00 |
+| `access_issue` | 20 | 1.00 | 0.00 |
+| `refund_commitment` | 19 | 1.00 | 0.00 |
+| `unsafe_commitment_under_failure` | 18 | 1.00 | 0.00 |
+| `invoice` | 17 | 1.00 | 0.00 |
 | `pii_safety` | 16 | 1.00 | 0.00 |
-| `access_issue` | 14 | 1.00 | 0.00 |
 | `escalation` | 14 | 1.00 | 0.00 |
-| `refund_commitment` | 12 | 1.00 | 0.00 |
-| `invoice` | 12 | 1.00 | 0.00 |
+| `tool_failure` | 11 | 1.00 | 0.00 |
 | `no_tool_grounding` | 10 | 1.00 | 0.00 |
+| `policy_conflict` | 9 | 1.00 | 0.00 |
+| `order_not_found` | 7 | 1.00 | 0.00 |
 | `memory_pollution` | 5 | 1.00 | 0.00 |
 
 Full breakdown is written to `runs/eval_course_support/risk_tag_summary.csv`.
 
 ## Failure Analysis
 
-Failure reason summary from the 80-case run:
+Failure reason summary from the 100-case run:
 
-- `llm_only`: 80 failures, mainly `wrong_gate_action` (55), `missing_policy_coverage` (13), and `missing_required_tool` (9)
-- `rag_only`: 80 failures, mainly `wrong_gate_action` (55) and `missing_required_tool` (22)
-- `agent_harness_without_gate`: 80 failures, mainly `wrong_gate_action` (55) and `risky_draft_without_gate` (25)
+- `llm_only`: 100 failures, including `missing_policy_coverage` (100), `wrong_gate_action` (75), `false_commitment` (43), and `missing_required_tool` (34)
+- `rag_only`: 100 failures, including `missing_required_tool` (100), `wrong_gate_action` (75), and memory/escalation mismatches
+- `agent_harness_without_gate`: 100 failures, including `false_commitment` (100), `risky_draft_without_gate` (100), and `wrong_gate_action` (75)
 - `agent_harness`: 0 failures
 
 The failure summary is written to `runs/eval_course_support/failure_reason_summary.csv`.
@@ -190,6 +201,7 @@ Each row in `transcripts.jsonl` contains:
 - `policy_topics_found`
 - `gate_decision`
 - `failure_reason`
+- `failure_reasons`
 - `violations`
 - `final_reply`
 
@@ -255,4 +267,4 @@ type runs\eval_course_support\failure_reason_summary.csv
 ## Resume Summary
 
 See `docs/resume_project.md` for a resume-ready version. The resume version keeps the same truth boundary:
-80 deterministic cases, synthetic mock data, local evaluation, and no production claims.
+100 deterministic cases, synthetic mock data, local evaluation, and no production claims.

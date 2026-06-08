@@ -238,8 +238,8 @@ def render_replay_tab() -> None:
             st.code(", ".join(trace.get("policy_topics_found", [])) or "none")
             st.write("gate_decision")
             st.code(str(trace.get("gate_decision")))
-            st.write("failure_reason")
-            st.code(str(trace.get("failure_reason") or "none"))
+            st.write("failure_reasons")
+            st.code(", ".join(trace.get("failure_reasons", [])) or str(trace.get("failure_reason") or "none"))
             st.write("violations")
             st.code(", ".join(trace.get("violations", [])) or "none")
             st.write("final_reply")
@@ -262,14 +262,17 @@ def render_failure_tab() -> None:
 
     reasons = ["All"] + sorted({trace.get("failure_reason", "unknown") for trace in failures})
     modes = ["All"] + sorted({trace.get("mode", "") for trace in failures})
+    risk_tags = ["All"] + sorted({tag for trace in failures for tag in trace.get("risk_tags", [])})
     reason = st.selectbox("failure_reason", reasons)
     mode = st.selectbox("mode", modes, key="failure_mode")
+    risk_tag = st.selectbox("risk_tag", risk_tags)
 
     filtered = [
         trace
         for trace in failures
         if (reason == "All" or trace.get("failure_reason") == reason)
         and (mode == "All" or trace.get("mode") == mode)
+        and (risk_tag == "All" or risk_tag in trace.get("risk_tags", []))
     ]
     st.write(f"Matched failures: {len(filtered)}")
     for trace in filtered[:20]:
@@ -280,6 +283,10 @@ def render_failure_tab() -> None:
             st.code(f"{trace.get('predicted_intent')} -> {trace.get('expected_intent')}")
             st.write("gate")
             st.code(str(trace.get("gate_decision")))
+            st.write("risk_tags")
+            st.code(", ".join(trace.get("risk_tags", [])) or "none")
+            st.write("failure_reasons")
+            st.code(", ".join(trace.get("failure_reasons", [])) or str(trace.get("failure_reason") or "none"))
             st.write("violations")
             st.code(", ".join(trace.get("violations", [])) or "none")
             st.write("required_tools")

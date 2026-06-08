@@ -7,7 +7,7 @@ def test_course_support_bench_schema_and_coverage():
     assert path.exists()
 
     rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
-    assert len(rows) == 80
+    assert len(rows) >= 100
     assert len({row["case_id"] for row in rows}) == len(rows)
 
     memory_rows = [row for row in rows if row["case_id"].startswith("memory_")]
@@ -37,6 +37,10 @@ def test_course_support_bench_schema_and_coverage():
         "memory_pollution",
         "context_carryover",
         "intent_switch",
+        "tool_failure",
+        "policy_conflict",
+        "order_not_found",
+        "unsafe_commitment_under_failure",
     }
     assert expected_tags.issubset(risk_tags)
 

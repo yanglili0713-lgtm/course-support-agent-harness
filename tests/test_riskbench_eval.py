@@ -7,7 +7,7 @@ from agent_harness.evaluation.riskbench_eval import load_riskbench, run_riskbenc
 
 def test_load_riskbench():
     cases = load_riskbench(Path("data/course_support_bench.jsonl"))
-    assert len(cases) == 80
+    assert len(cases) >= 100
     assert cases[0].case_id
     assert cases[0].expected_intent
 
@@ -22,7 +22,7 @@ def test_riskbench_eval_outputs_files(tmp_path):
     assert summary["metadata"]["bench_path"].replace("\\", "/") == "data/course_support_bench.jsonl"
     assert summary["metadata"]["policy_path"].replace("\\", "/") == "configs/risk_policy.yaml"
     assert summary["metadata"]["tool_permissions_path"].replace("\\", "/") == "configs/tool_permissions.yaml"
-    assert summary["metadata"]["case_count"] == 80
+    assert summary["metadata"]["case_count"] >= 100
     assert set(summary["metadata"]["modes"]) == {"llm_only", "rag_only", "agent_harness_without_gate", "agent_harness"}
     assert set(summary["modes"]) == {"llm_only", "rag_only", "agent_harness_without_gate", "agent_harness"}
     assert "risk_violation_rate" in summary["modes"]["llm_only"]
@@ -30,6 +30,9 @@ def test_riskbench_eval_outputs_files(tmp_path):
     assert summary["modes"]["agent_harness"]["risk_violation_rate"] <= summary["modes"]["llm_only"]["risk_violation_rate"]
     assert summary["modes"]["agent_harness"]["pass_rate"] == 1.0
     assert summary["modes"]["agent_harness"]["risk_violation_rate"] == 0.0
+    assert summary["modes"]["agent_harness"]["tool_grounding_rate"] == 1.0
+    assert summary["modes"]["agent_harness"]["policy_coverage_rate"] == 1.0
+    assert summary["modes"]["agent_harness"]["gate_action_accuracy"] == 1.0
     assert summary["modes"]["agent_harness"]["memory"]["memory_case_count"] == 10
     assert summary["modes"]["agent_harness"]["memory"]["memory_pollution_rate"] == 0.0
 
@@ -78,6 +81,13 @@ def test_riskbench_eval_outputs_files(tmp_path):
     assert risk_tag_rows
     assert {"risk_tag", "mode", "case_count", "pass_rate", "risk_violation_rate", "tool_grounding_rate"}.issubset(risk_tag_rows[0])
     assert any(row["risk_tag"] == "memory_pollution" and row["mode"] == "agent_harness" for row in risk_tag_rows)
+    risk_tags = {row["risk_tag"] for row in risk_tag_rows}
+    assert {
+        "tool_failure",
+        "policy_conflict",
+        "order_not_found",
+        "unsafe_commitment_under_failure",
+    }.issubset(risk_tags)
 
     failure_reason_rows = list(DictReader((tmp_path / "failure_reason_summary.csv").open(encoding="utf-8")))
     assert failure_reason_rows
@@ -93,6 +103,8 @@ def test_riskbench_eval_outputs_files(tmp_path):
             assert failure_by_mode[mode]["false_commitment"] > 0
 
     assert all(count == 0 for count in failure_by_mode["agent_harness"].values())
+    assert failure_by_mode["llm_only"]["false_commitment"] > 0
+    assert failure_by_mode["agent_harness_without_gate"]["risky_draft_without_gate"] > 0
 
 
 def test_agent_harness_mode_reduces_false_commitments_and_memory_pollution(tmp_path):
