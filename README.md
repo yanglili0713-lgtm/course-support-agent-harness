@@ -1,52 +1,49 @@
 # CourseSupport-AgentHarness
 
 CourseSupport-AgentHarness is a deterministic, offline Agent Harness for online course after-sales support.
-It focuses on tool-call safety, risk governance, business-commitment constraints, memory pollution control,
-and transcript replay.
+It focuses on controllable tool calling, risk governance, business-commitment constraints, memory pollution
+control, and transcript replay.
 
-This repository uses synthetic mock customer/order/invoice/ticket data only. It does **not** use real
-production data, does **not** connect to a database, and does **not** call external model APIs in the
-evaluation path.
+The project is a local business prototype with synthetic mock customer/order/invoice/ticket data. It is not
+a production support system, not a GraphRAG benchmark, and not an online API evaluation.
 
 ## Project Overview
 
-The project models a course platform support workflow for cases such as:
+The target scenario is an online course platform support workflow. The risky cases include:
 
-- course access failures
-- refund threats
-- invoice questions
-- account security issues
-- human escalation requests
+- access failures after payment
+- refund threats and refund eligibility questions
+- invoice status and unsupported invoice creation requests
+- account security and PII exposure risks
+- human escalation and ticket grounding
+- multi-turn memory pollution, such as "it still does not work" or intent switching
 
-The core idea is simple: the harness controls the workflow deterministically, while each response is
-grounded by policy, tools, memory, and replayable traces.
+The key design goal is to stop the model from making unsupported business commitments. The model can draft a
+reply, but the harness decides whether the reply is grounded enough to allow, replan, block, escalate, or halt.
 
 ## Why Agent Harness
 
-A plain chat prompt is not enough for this scenario because the business cost of a wrong answer is real:
+A single chat completion can answer many support questions, but it cannot safely own the workflow when the
+wrong answer has a concrete business cost:
 
-- promising a refund without checking policy
-- claiming an invoice was issued without an invoice tool result
-- saying an access issue is fixed when the tool failed
-- leaking raw order ids or email addresses
-- letting old access-related memory pollute a new invoice or refund turn
+- refund promised without `refund_policy_check`
+- invoice claimed as issued without an invoice-capable tool
+- access issue claimed fixed without `access_reset`
+- fake ticket id returned without `escalation_ticket`
+- raw order id, full email, or phone leaked in the visible reply
+- old access memory contaminating a new invoice or refund request
 
-So the project emphasizes control over generation:
-
-- Router handles initial intent routing
-- Monitor checks high-risk route mismatch and evidence gaps
-- Resolver generates replies only from verified policy evidence and tool results
-- Risk Gate makes the final block / replan / escalate decision
-- Transcript replay records the full path for debugging and review
+CourseSupport-AgentHarness keeps those decisions outside free-form generation. Intent routing, policy lookup,
+tool permissions, gate decisions, and transcript logging are deterministic and replayable.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    U[User turn] --> R[Router]
+    U[User Turn] --> R[Router]
     R --> M[Monitor]
     M --> G{Risk Gate}
-    G -->|allow / replan / escalate / halt| S[Resolver]
+    G -->|allow / replan / block / escalate / halt| S[Resolver]
     S --> T[MCP-like Tool Gateway]
     S --> P[RAG Policy Store]
     S --> Mem[Memory Store]
@@ -54,78 +51,170 @@ flowchart LR
     Tr --> Replay[Transcript Replay]
 ```
 
-Core modules:
+Main modules:
 
-- `agent_harness/control_plane/support_runner.py`
-- `agent_harness/control_plane/support_gates.py`
-- `agent_harness/control_plane/transcript.py`
-- `agent_harness/mcp/support_gateway.py`
-- `agent_harness/memory/store.py`
-- `agent_harness/rag/store.py`
-- `agent_harness/skills/support_playbooks.py`
-- `agent_harness/sub_agents/support_agents.py`
-- `agent_harness/evaluation/support_eval.py`
-- `agent_harness/evaluation/riskbench_eval.py`
+- `agent_harness/evaluation/riskbench_eval.py`: deterministic risk evaluation and replay traces
+- `agent_harness/evaluation/risk_policy_loader.py`: policy and permission config loader
+- `configs/risk_policy.yaml`: required tools, policy topics, forbidden claims, and fallback actions
+- `configs/tool_permissions.yaml`: Router / Monitor / Resolver tool allowlists
+- `app/streamlit_risk_dashboard.py`: lightweight replay and risk dashboard
+- `data/course_support_bench.jsonl`: deterministic CourseSupportBench cases
 
-The current evaluation path is deterministic and offline. The harness shape is kept compatible with a live
-LLM-backed workflow, but the benchmark does not require a real model to run.
+The production-facing support runner still lives under `agent_harness/control_plane/`, while the new
+CourseSupportBench path is intentionally deterministic and offline for repeatable evaluation.
 
 ## CourseSupportBench
 
-`data/course_support_bench.jsonl` contains a deterministic evaluation set for the support workflow.
+`data/course_support_bench.jsonl` now contains 80 deterministic cases:
 
-- 53 total cases
-- 8 memory-stress cases
-- covers access failure, refund threat, invoice query, account security, human escalation,
-  PII leakage, missing tools, false commitment, and memory pollution
-- compares four modes:
-  - `llm_only`
-  - `rag_only`
-  - `agent_harness_without_gate`
-  - `agent_harness`
+- 14 access-related cases
+- 13 refund-related cases
+- 12 invoice-related cases
+- 9 account-security cases
+- 8 human-escalation cases
+- 7 PII/raw-id leakage cases
+- 7 no-tool-grounding cases
+- 10 memory-stress cases
 
-Evaluation artifacts:
-
-- `runs/eval_course_support/metrics_summary.json`
-- `runs/eval_course_support/metrics_summary.csv`
-- `runs/eval_course_support/failure_cases.jsonl`
-- `runs/eval_course_support/transcripts.jsonl`
+Every case includes `case_id`, `user_message`, `turns`, `expected_intent`, `risk_tags`, and
+`expected_gate_action`. Cases may also override required tools, policy topics, and forbidden claims. If a case
+does not override them, defaults are loaded from `configs/risk_policy.yaml`.
 
 ## Risk Policy Matrix
 
-Risk rules are maintained as configuration, not scattered one-off checks.
+The risk policy matrix makes business constraints configurable instead of hiding them inside one-off code:
 
-- `configs/risk_policy.yaml`
-- `configs/tool_permissions.yaml`
+- `required_tools`: tools that must be called before a commitment
+- `required_policy_topics`: evidence topics that must be present
+- `forbidden_claims`: unsafe claims the reply must not contain
+- `default_action`: expected gate action for normal handling
+- `on_missing_tool`, `on_missing_policy`, `on_forbidden_claim`: fallback control actions
 
-The policy matrix defines, per intent:
+The tool permission matrix separates agent roles:
 
-- required tools
-- required policy topics
-- forbidden claims
-- fallback action when a tool or policy check is missing
+- Router: no tools
+- Monitor: limited audit tools
+- Resolver: customer/order/access/refund/escalation tools
 
-The tool-permission matrix defines which agent role may call which mock tools.
+## Evaluation Modes
 
-## Evaluation Metrics
+The benchmark compares four deterministic modes:
 
-Key metrics reported by `agent_harness/evaluation/riskbench_eval.py`:
+- `llm_only`: no RAG, no tools, no gate; simulates direct unsupported answers
+- `rag_only`: policy evidence is available, but tool grounding is not enforced
+- `agent_harness_without_gate`: tools and policy are available, but the final Risk Gate is disabled
+- `agent_harness`: full Router / Monitor / Resolver, MCP-like tool gateway, policy matrix, Risk Gate, and memory handling
 
-- `risk_violation_rate`
+No separate `agent_harness_without_memory` mode is added. Memory behavior is evaluated through the 10 memory
+stress cases in the same four-mode comparison.
+
+## Metrics
+
+Core metrics:
+
+- `pass_rate`
+- `intent_accuracy`
 - `tool_grounding_rate`
 - `policy_coverage_rate`
+- `risk_violation_rate`
 - `false_commitment_rate`
 - `pii_leakage_rate`
 - `gate_action_accuracy`
-- `intent_accuracy`
-- memory metrics:
-  - `context_carryover_accuracy`
-  - `intent_switch_accuracy`
-  - `memory_pollution_rate`
+- `memory_pollution_rate`
+
+Additional outputs:
+
+- `risk_tag_summary.csv/json`: metrics grouped by risk tag and mode
+- `failure_reason_summary.csv/json`: failure reason distribution by mode
+- `failure_cases.jsonl`: failed traces with reason and violations
+- `transcripts.jsonl`: full case-level replay trace
+
+## Results
+
+The numbers below are from the deterministic local CourseSupportBench run on 80 synthetic cases. They are not
+online production metrics.
+
+| Mode | pass_rate | intent_accuracy | tool_grounding_rate | policy_coverage_rate | risk_violation_rate | gate_action_accuracy | memory_pollution_rate |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `llm_only` | 0.00 | 0.9375 | 0.00 | 0.00 | 1.00 | 0.3125 | 0.50 |
+| `rag_only` | 0.00 | 0.9375 | 0.00 | 1.00 | 1.00 | 0.3125 | 0.50 |
+| `agent_harness_without_gate` | 0.00 | 1.00 | 1.00 | 1.00 | 1.00 | 0.3125 | 0.00 |
+| `agent_harness` | 1.00 | 1.00 | 1.00 | 1.00 | 0.00 | 1.00 | 0.00 |
+
+The full Agent Harness reduced `risk_violation_rate` from 1.00 in the baseline modes to 0.00, reached
+`tool_grounding_rate = 1.00`, `policy_coverage_rate = 1.00`, and `gate_action_accuracy = 1.00`.
+
+## Risk Tag Breakdown
+
+Selected risk tag counts and full-harness results:
+
+| risk_tag | case_count | agent_harness pass_rate | agent_harness risk_violation_rate |
+| --- | ---: | ---: | ---: |
+| `tool_required` | 34 | 1.00 | 0.00 |
+| `pii_safety` | 16 | 1.00 | 0.00 |
+| `access_issue` | 14 | 1.00 | 0.00 |
+| `escalation` | 14 | 1.00 | 0.00 |
+| `refund_commitment` | 12 | 1.00 | 0.00 |
+| `invoice` | 12 | 1.00 | 0.00 |
+| `no_tool_grounding` | 10 | 1.00 | 0.00 |
+| `memory_pollution` | 5 | 1.00 | 0.00 |
+
+Full breakdown is written to `runs/eval_course_support/risk_tag_summary.csv`.
+
+## Failure Analysis
+
+Failure reason summary from the 80-case run:
+
+- `llm_only`: 80 failures, mainly `wrong_gate_action` (55), `missing_policy_coverage` (13), and `missing_required_tool` (9)
+- `rag_only`: 80 failures, mainly `wrong_gate_action` (55) and `missing_required_tool` (22)
+- `agent_harness_without_gate`: 80 failures, mainly `wrong_gate_action` (55) and `risky_draft_without_gate` (25)
+- `agent_harness`: 0 failures
+
+The failure summary is written to `runs/eval_course_support/failure_reason_summary.csv`.
+It is a multi-label summary, so a single failed case can contribute to multiple reasons and the per-reason
+rates do not need to sum to 1.
+
+## Transcript Replay
+
+Each row in `transcripts.jsonl` contains:
+
+- `case_id`
+- `mode`
+- `turns`
+- `expected_intent`
+- `predicted_intent`
+- `risk_tags`
+- `required_tools`
+- `tool_calls`
+- `required_policy_topics`
+- `policy_topics_found`
+- `gate_decision`
+- `failure_reason`
+- `violations`
+- `final_reply`
+
+This makes every routing, grounding, and gate decision inspectable after the run.
+
+## Streamlit Risk Dashboard
+
+Run the dashboard after generating evaluation outputs:
+
+```powershell
+python -m streamlit run app\streamlit_risk_dashboard.py --server.port 8502
+```
+
+Dashboard tabs:
+
+- Agent Harness Demo
+- Risk Evaluation Dashboard
+- Transcript Replay
+- Failure Analysis
+
+The dashboard only reads local deterministic outputs. It does not call external APIs.
 
 ## How to Run
 
-Install dependencies first:
+Install dependencies:
 
 ```powershell
 python -m pip install -r requirements.txt
@@ -134,69 +223,36 @@ python -m pip install -r requirements.txt
 Run tests:
 
 ```powershell
-python -m pytest --basetemp=.\.pytest_tmp
+python -m pytest --basetemp=.\.pytest_tmp_codex
 ```
 
-Run the deterministic evaluation:
+Run CourseSupportBench:
 
 ```powershell
 python scripts\run_course_support_eval.py `
   --bench data\course_support_bench.jsonl `
   --modes llm_only,rag_only,agent_harness_without_gate,agent_harness `
-  --risk-policy configs\risk_policy.yaml `
-  --tool-permissions configs\tool_permissions.yaml `
   --output-dir runs\eval_course_support
 ```
 
-Run the Streamlit dashboard:
+Inspect outputs:
 
 ```powershell
-python -m pip install streamlit
-python -m streamlit run app\streamlit_risk_dashboard.py --server.port 8502
+type runs\eval_course_support\metrics_summary.csv
+type runs\eval_course_support\risk_tag_summary.csv
+type runs\eval_course_support\failure_reason_summary.csv
 ```
 
-## Results
+## Project Boundaries
 
-The numbers below come from the deterministic offline CourseSupportBench run in this repository.
-They are **not** online production metrics.
-
-| Mode | pass_rate | risk_violation_rate | tool_grounding_rate | policy_coverage_rate | gate_action_accuracy | memory_pollution_rate |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `llm_only` | 0.00 | 1.00 | 0.00 | 0.00 | 0.3774 | 0.50 |
-| `rag_only` | 0.00 | 1.00 | 0.00 | 1.00 | 0.3774 | 0.50 |
-| `agent_harness_without_gate` | 0.00 | 1.00 | 1.00 | 1.00 | 0.3774 | 0.00 |
-| `agent_harness` | 1.00 | 0.00 | 1.00 | 1.00 | 1.00 | 0.00 |
-
-On the current 53-case benchmark:
-
-- the full harness reduced `risk_violation_rate` from `1.00` to `0.00`
-- `tool_grounding_rate` reached `1.00`
-- `policy_coverage_rate` reached `1.00`
-- `gate_action_accuracy` reached `1.00`
-- the 8 memory-stress cases reached `context_carryover_accuracy = 1.00`
-- `intent_switch_accuracy = 1.00`
-- `memory_pollution_rate = 0.00`
-
-## Streamlit Risk Dashboard
-
-`app/streamlit_risk_dashboard.py` is a lightweight view layer for the same offline artifacts.
-
-Tabs:
-
-- Agent Harness Demo
-- Risk Evaluation Dashboard
-- Transcript Replay
-- Failure Analysis
-
-The dashboard reads the evaluation outputs and does not call external APIs.
+- Data is synthetic mock data, not real user/order/ticket data
+- Evaluation is deterministic local evaluation, not online production measurement
+- The MCP-like gateway is an in-process tool gateway, not a full MCP SDK/server
+- The project does not connect to a real database
+- The evaluation path does not call DeepSeek or any external model API
+- The numbers in this README are benchmark results from this repository only
 
 ## Resume Summary
 
-See `docs/resume_project.md` for a resume-ready 4-bullet summary with the real numbers used in this repo.
-
-## Notes
-
-- `runs/` and `.\.pytest_tmp\` are ignored and should not be committed
-- no real user data is used anywhere in this repository
-- no production deployment is included
-- no live database connection is required
+See `docs/resume_project.md` for a resume-ready version. The resume version keeps the same truth boundary:
+80 deterministic cases, synthetic mock data, local evaluation, and no production claims.

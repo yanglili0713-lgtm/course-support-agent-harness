@@ -1,4 +1,5 @@
 import json
+from csv import DictReader
 from pathlib import Path
 
 from agent_harness.evaluation.riskbench_eval import load_riskbench, run_riskbench_eval
@@ -6,7 +7,7 @@ from agent_harness.evaluation.riskbench_eval import load_riskbench, run_riskbenc
 
 def test_load_riskbench():
     cases = load_riskbench(Path("data/course_support_bench.jsonl"))
-    assert len(cases) >= 50
+    assert len(cases) == 80
     assert cases[0].case_id
     assert cases[0].expected_intent
 
@@ -21,18 +22,25 @@ def test_riskbench_eval_outputs_files(tmp_path):
     assert summary["metadata"]["bench_path"].replace("\\", "/") == "data/course_support_bench.jsonl"
     assert summary["metadata"]["policy_path"].replace("\\", "/") == "configs/risk_policy.yaml"
     assert summary["metadata"]["tool_permissions_path"].replace("\\", "/") == "configs/tool_permissions.yaml"
-    assert summary["metadata"]["case_count"] >= 50
+    assert summary["metadata"]["case_count"] == 80
     assert set(summary["metadata"]["modes"]) == {"llm_only", "rag_only", "agent_harness_without_gate", "agent_harness"}
     assert set(summary["modes"]) == {"llm_only", "rag_only", "agent_harness_without_gate", "agent_harness"}
     assert "risk_violation_rate" in summary["modes"]["llm_only"]
     assert "tool_grounding_rate" in summary["modes"]["agent_harness"]
     assert summary["modes"]["agent_harness"]["risk_violation_rate"] <= summary["modes"]["llm_only"]["risk_violation_rate"]
-    assert summary["modes"]["agent_harness"]["memory"]["memory_case_count"] >= 8
+    assert summary["modes"]["agent_harness"]["pass_rate"] == 1.0
+    assert summary["modes"]["agent_harness"]["risk_violation_rate"] == 0.0
+    assert summary["modes"]["agent_harness"]["memory"]["memory_case_count"] == 10
+    assert summary["modes"]["agent_harness"]["memory"]["memory_pollution_rate"] == 0.0
 
     assert (tmp_path / "metrics_summary.json").exists()
     assert (tmp_path / "metrics_summary.csv").exists()
     assert (tmp_path / "failure_cases.jsonl").exists()
     assert (tmp_path / "transcripts.jsonl").exists()
+    assert (tmp_path / "risk_tag_summary.json").exists()
+    assert (tmp_path / "risk_tag_summary.csv").exists()
+    assert (tmp_path / "failure_reason_summary.json").exists()
+    assert (tmp_path / "failure_reason_summary.csv").exists()
 
     lines = [json.loads(line) for line in (tmp_path / "transcripts.jsonl").read_text(encoding="utf-8").splitlines()]
     assert lines
@@ -48,6 +56,7 @@ def test_riskbench_eval_outputs_files(tmp_path):
         "policy_source",
         "turns",
         "failure_reason",
+        "risk_tags",
     }.issubset(lines[0])
 
     failure_lines = [json.loads(line) for line in (tmp_path / "failure_cases.jsonl").read_text(encoding="utf-8").splitlines()]
@@ -62,7 +71,28 @@ def test_riskbench_eval_outputs_files(tmp_path):
         "wrong_gate_action",
         "memory_pollution",
         "escalation_mismatch",
+        "risky_draft_without_gate",
     }
+
+    risk_tag_rows = list(DictReader((tmp_path / "risk_tag_summary.csv").open(encoding="utf-8")))
+    assert risk_tag_rows
+    assert {"risk_tag", "mode", "case_count", "pass_rate", "risk_violation_rate", "tool_grounding_rate"}.issubset(risk_tag_rows[0])
+    assert any(row["risk_tag"] == "memory_pollution" and row["mode"] == "agent_harness" for row in risk_tag_rows)
+
+    failure_reason_rows = list(DictReader((tmp_path / "failure_reason_summary.csv").open(encoding="utf-8")))
+    assert failure_reason_rows
+    assert {"mode", "failure_reason", "count", "rate"}.issubset(failure_reason_rows[0])
+    assert any(row["failure_reason"] == "risky_draft_without_gate" for row in failure_reason_rows)
+
+    failure_by_mode = {}
+    for row in failure_reason_rows:
+        failure_by_mode.setdefault(row["mode"], {})[row["failure_reason"]] = int(row["count"])
+
+    for mode in ["llm_only", "agent_harness_without_gate"]:
+        if summary["modes"][mode]["false_commitment_rate"] > 0:
+            assert failure_by_mode[mode]["false_commitment"] > 0
+
+    assert all(count == 0 for count in failure_by_mode["agent_harness"].values())
 
 
 def test_agent_harness_mode_reduces_false_commitments_and_memory_pollution(tmp_path):
