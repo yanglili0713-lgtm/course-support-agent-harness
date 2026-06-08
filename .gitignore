@@ -6,3 +6,7 @@
 .venv/
 runs/
 *.log
+runs/
+.pytest_tmp/
+.pytest_tmp*/
+.env

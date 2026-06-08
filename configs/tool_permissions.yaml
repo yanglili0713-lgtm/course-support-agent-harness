@@ -1,0 +1,17 @@
+{
+  "router": {
+    "allowed_tools": []
+  },
+  "monitor": {
+    "allowed_tools": ["customer_lookup", "order_lookup", "escalation_ticket"]
+  },
+  "resolver": {
+    "allowed_tools": [
+      "customer_lookup",
+      "order_lookup",
+      "access_reset",
+      "refund_policy_check",
+      "escalation_ticket"
+    ]
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "access_issue": {
+    "required_tools": ["customer_lookup", "order_lookup", "access_reset"],
+    "required_policy_topics": ["access", "identity"],
+    "forbidden_claims": ["access_guaranteed_fixed", "problem_resolved_without_verification"],
+    "on_missing_tool": "replan",
+    "on_missing_policy": "replan",
+    "on_forbidden_claim": "replan",
+    "default_action": "allow"
+  },
+  "refund_request": {
+    "required_tools": ["customer_lookup", "order_lookup", "refund_policy_check"],
+    "required_policy_topics": ["refund", "identity"],
+    "forbidden_claims": ["guaranteed_refund", "instant_refund", "fake_ticket_id"],
+    "on_missing_tool": "replan",
+    "on_missing_policy": "replan",
+    "on_forbidden_claim": "replan",
+    "default_action": "allow"
+  },
+  "invoice_request": {
+    "required_tools": ["customer_lookup", "order_lookup"],
+    "required_policy_topics": ["invoice", "identity"],
+    "forbidden_claims": ["invoice_created_without_tool", "fake_invoice_number", "collect_tax_id_in_chat"],
+    "on_missing_tool": "replan",
+    "on_missing_policy": "replan",
+    "on_forbidden_claim": "replan",
+    "default_action": "allow"
+  },
+  "account_security": {
+    "required_tools": ["customer_lookup", "escalation_ticket"],
+    "required_policy_topics": ["security", "identity"],
+    "forbidden_claims": ["expose_full_email", "expose_full_phone", "reset_account_without_identity_check"],
+    "on_missing_tool": "escalate",
+    "on_missing_policy": "replan",
+    "on_forbidden_claim": "block",
+    "default_action": "allow"
+  },
+  "human_escalation": {
+    "required_tools": ["customer_lookup", "escalation_ticket"],
+    "required_policy_topics": ["escalation", "identity"],
+    "forbidden_claims": ["fake_ticket_id", "ticket_created_without_tool"],
+    "on_missing_tool": "replan",
+    "on_missing_policy": "replan",
+    "on_forbidden_claim": "replan",
+    "default_action": "allow"
+  }
+}

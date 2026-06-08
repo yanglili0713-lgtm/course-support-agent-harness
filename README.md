@@ -1,211 +1,202 @@
-# Course After-Sales Customer Support Agent Harness
+# CourseSupport-AgentHarness
 
-This project is a local, runnable business prototype for a course-platform after-sales support scenario. It is not a SupportOps Evaluation framework, not a RAG benchmark, and not a GraphRAG benchmark.
+CourseSupport-AgentHarness is a deterministic, offline Agent Harness for online course after-sales support.
+It focuses on tool-call safety, risk governance, business-commitment constraints, memory pollution control,
+and transcript replay.
 
-The goal is to show how an Agent Harness can make risky customer-support actions controllable, verifiable, and replayable. DeepSeek API only generates customer-facing text. Intent routing, tool execution, policy evidence checks, risk gates, memory handling, and transcript replay are controlled by deterministic Harness code.
+This repository uses synthetic mock customer/order/invoice/ticket data only. It does **not** use real
+production data, does **not** connect to a database, and does **not** call external model APIs in the
+evaluation path.
 
-The covered business cases are course access failure, refund threats, invoice lookup, account security, and human escalation.
+## Project Overview
 
-## Why This Needs An Agent Harness
+The project models a course platform support workflow for cases such as:
 
-A plain chatbot can answer generic support questions, but it cannot safely reset access, discuss refund eligibility, mention a ticket id, or guide invoice handling without checking business state and policy evidence.
+- course access failures
+- refund threats
+- invoice questions
+- account security issues
+- human escalation requests
 
-This Harness makes those checks explicit:
+The core idea is simple: the harness controls the workflow deterministically, while each response is
+grounded by policy, tools, memory, and replayable traces.
 
-- Router identifies the initial intent and routing signals.
-- Skills Playbook defines risk level, required tools, and required policy topics.
-- Monitor checks high-risk misrouting and policy evidence gaps.
-- Resolver builds the reply from the current intent, retrieved policy evidence, and tool results.
-- Risk Gate performs the final interception for unsafe business promises, PII leaks, ungrounded ticket ids, missing refund checks, missing invoice tools, and access-reset overclaims.
-- Transcript files record route decisions, Monitor flags, tool results, Gate decisions, memory snapshots, and final answers.
+## Why Agent Harness
 
-## Tech Stack
+A plain chat prompt is not enough for this scenario because the business cost of a wrong answer is real:
 
-Python, DeepSeek API, OpenAI-compatible API, RAG, local hash embedding, JSONL retrieval, metadata filter, Skills Playbook, MCP-like tool gateway, multi-agent workflow, Working/Episodic/Semantic/Procedural memory, Risk Gate/Replan, transcript replay, pytest.
+- promising a refund without checking policy
+- claiming an invoice was issued without an invoice tool result
+- saying an access issue is fixed when the tool failed
+- leaking raw order ids or email addresses
+- letting old access-related memory pollute a new invoice or refund turn
 
-The core support demo runs on the Python standard library. `pytest` is only needed for the test suite.
+So the project emphasizes control over generation:
+
+- Router handles initial intent routing
+- Monitor checks high-risk route mismatch and evidence gaps
+- Resolver generates replies only from verified policy evidence and tool results
+- Risk Gate makes the final block / replan / escalate decision
+- Transcript replay records the full path for debugging and review
 
 ## Architecture
 
-### Router / Monitor / Resolver
-
-`SupportRouterAgent` produces the initial `RouteDecision`: intent, confidence, reason, and routing signals. It does not directly decide the risk level.
-
-Risk level is defined by the deterministic Skills Playbook. `SupportMonitorAgent` mainly checks high-confidence wrong routes and missing policy topics. Tool-call absence, unsupported business commitments, refund eligibility without `refund_policy_check`, missing `invoice_create`, ticket-id grounding, and PII leakage are finally blocked by `gate_support_response`.
-
-### RAG + Skills Playbook
-
-The knowledge base is JSONL policy data. Retrieval follows:
-
-```text
-embedding -> vector search -> metadata filter -> dedupe -> difficulty rerank -> policy-topic backfill
+```mermaid
+flowchart LR
+    U[User turn] --> R[Router]
+    R --> M[Monitor]
+    M --> G{Risk Gate}
+    G -->|allow / replan / escalate / halt| S[Resolver]
+    S --> T[MCP-like Tool Gateway]
+    S --> P[RAG Policy Store]
+    S --> Mem[Memory Store]
+    S --> Tr[Transcript Writer]
+    Tr --> Replay[Transcript Replay]
 ```
 
-The Skills Playbook maps each intent to required policy topics and tools:
+Core modules:
 
-- `refund_request`: identity + refund policy, `refund_policy_check`
-- `access_issue`: identity + access recovery, `access_reset`
-- `invoice_request`: identity + invoice policy, order lookup only
-- `account_security`: identity + security policy, escalation
-- `escalate`: human-review ticket
+- `agent_harness/control_plane/support_runner.py`
+- `agent_harness/control_plane/support_gates.py`
+- `agent_harness/control_plane/transcript.py`
+- `agent_harness/mcp/support_gateway.py`
+- `agent_harness/memory/store.py`
+- `agent_harness/rag/store.py`
+- `agent_harness/skills/support_playbooks.py`
+- `agent_harness/sub_agents/support_agents.py`
+- `agent_harness/evaluation/support_eval.py`
+- `agent_harness/evaluation/riskbench_eval.py`
 
-`support-eval` is an end-to-end business regression check built from known bad cases. It is not a benchmark and should not be described as SupportOpsBench, Recall@5, Precision@5, or leaderboard evaluation.
+The current evaluation path is deterministic and offline. The harness shape is kept compatible with a live
+LLM-backed workflow, but the benchmark does not require a real model to run.
 
-### MCP-like Gateway
+## CourseSupportBench
 
-The project uses an in-process MCP-like gateway, not the real MCP SDK or a production MCP server. It models the engineering contract that matters here: tool specs, agent allow-lists, auditable tool results, and side-effect control.
+`data/course_support_bench.jsonl` contains a deterministic evaluation set for the support workflow.
 
-Mock business tools:
+- 53 total cases
+- 8 memory-stress cases
+- covers access failure, refund threat, invoice query, account security, human escalation,
+  PII leakage, missing tools, false commitment, and memory pollution
+- compares four modes:
+  - `llm_only`
+  - `rag_only`
+  - `agent_harness_without_gate`
+  - `agent_harness`
 
-- `customer_lookup`
-- `order_lookup`
-- `access_reset`
-- `refund_policy_check`
-- `escalation_ticket`
+Evaluation artifacts:
 
-All user, order, invoice, and ticket data are synthetic mock data. They are not real user logs, real orders, or real platform records.
+- `runs/eval_course_support/metrics_summary.json`
+- `runs/eval_course_support/metrics_summary.csv`
+- `runs/eval_course_support/failure_cases.jsonl`
+- `runs/eval_course_support/transcripts.jsonl`
 
-### Risk Gate / PII Guard / Grounding Guard
+## Risk Policy Matrix
 
-The final Gate can block or replan when:
+Risk rules are maintained as configuration, not scattered one-off checks.
 
-- A tool fails but the answer still promises success.
-- The answer discusses refund eligibility without a successful `refund_policy_check`.
-- The answer promises invoice issuance even though this Harness has no `invoice_create` tool.
-- The answer invents or rewrites an escalation ticket id.
-- The answer leaks raw order ids or full email addresses.
-- The answer claims `access_reset` has definitely solved the user's local access problem.
+- `configs/risk_policy.yaml`
+- `configs/tool_permissions.yaml`
 
-PII Guard protects user-visible customer replies. It is not a complete transcript redaction system: transcripts intentionally keep synthetic internal tool payloads so the run can be replayed and audited.
+The policy matrix defines, per intent:
 
-### Memory
+- required tools
+- required policy topics
+- forbidden claims
+- fallback action when a tool or policy check is missing
 
-The memory store has four layers:
+The tool-permission matrix defines which agent role may call which mock tools.
 
-- Working memory: recent user turns.
-- Episodic memory: route and resolution events.
-- Semantic memory: compacted long-dialog facts.
-- Procedural memory: repair rules learned from Gate failures.
+## Evaluation Metrics
 
-This supports cases such as the user later saying "still cannot enter" while also reducing old access-issue memory pollution when the current turn is clearly about invoice or refund.
+Key metrics reported by `agent_harness/evaluation/riskbench_eval.py`:
 
-### Replay Artifacts
+- `risk_violation_rate`
+- `tool_grounding_rate`
+- `policy_coverage_rate`
+- `false_commitment_rate`
+- `pii_leakage_rate`
+- `gate_action_accuracy`
+- `intent_accuracy`
+- memory metrics:
+  - `context_carryover_accuracy`
+  - `intent_switch_accuracy`
+  - `memory_pollution_rate`
 
-Each support run writes:
+## How to Run
 
-- `runs/<session>/transcript.jsonl`
-- `runs/<session>/memory_snapshot.json`
-- `runs/<session>/support_report.md`
-
-These artifacts are the main interview evidence for route correction, RAG evidence coverage, tool grounding, Gate decisions, and bad-case repair.
-
-## Quick Start
-
-Create `.env` in the project root:
-
-```env
-AGENT_HARNESS_BASE_URL=https://api.deepseek.com
-AGENT_HARNESS_API_KEY=your_deepseek_api_key
-AGENT_HARNESS_CHAT_MODEL=deepseek-v4-flash
-AGENT_HARNESS_EMBEDDING_MODEL=local-hash
-```
-
-Run the offline demo:
+Install dependencies first:
 
 ```powershell
-python -m agent_harness support --offline --knowledge examples/support_augmented_kb.jsonl
+python -m pip install -r requirements.txt
 ```
 
-Run the online DeepSeek demo:
+Run tests:
 
 ```powershell
-python -m agent_harness support --online --knowledge examples/support_augmented_kb.jsonl
+python -m pytest --basetemp=.\.pytest_tmp
 ```
 
-Run tests and regression evaluation:
+Run the deterministic evaluation:
 
 ```powershell
-python -m pytest
-python -m agent_harness support-eval --output runs\eval\support_eval.json
+python scripts\run_course_support_eval.py `
+  --bench data\course_support_bench.jsonl `
+  --modes llm_only,rag_only,agent_harness_without_gate,agent_harness `
+  --risk-policy configs\risk_policy.yaml `
+  --tool-permissions configs\tool_permissions.yaml `
+  --output-dir runs\eval_course_support
 ```
 
-## Streamlit Demo
-
-The repository also includes a lightweight Streamlit page for interview and resume demos. It is only a display layer and does not change the core Agent Harness behavior.
-
-Install Streamlit when you want to run the UI:
+Run the Streamlit dashboard:
 
 ```powershell
-pip install streamlit
-streamlit run demo_app.py
+python -m pip install streamlit
+python -m streamlit run app\streamlit_risk_dashboard.py --server.port 8502
 ```
 
-The page provides preset customer cases and manual input. After `Run Harness`, it shows:
+## Results
 
-- Final customer response.
-- Raw route and final intent.
-- RAG evidence retrieved for each turn.
-- MCP-like tool calls and tool results.
-- Risk Gate decisions.
-- Working/Episodic/Semantic/Procedural memory summary.
-- Full transcript JSON.
+The numbers below come from the deterministic offline CourseSupportBench run in this repository.
+They are **not** online production metrics.
 
-Current local verification:
+| Mode | pass_rate | risk_violation_rate | tool_grounding_rate | policy_coverage_rate | gate_action_accuracy | memory_pollution_rate |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `llm_only` | 0.00 | 1.00 | 0.00 | 0.00 | 0.3774 | 0.50 |
+| `rag_only` | 0.00 | 1.00 | 0.00 | 1.00 | 0.3774 | 0.50 |
+| `agent_harness_without_gate` | 0.00 | 1.00 | 1.00 | 1.00 | 0.3774 | 0.00 |
+| `agent_harness` | 1.00 | 0.00 | 1.00 | 1.00 | 1.00 | 0.00 |
 
-```text
-pytest: 23 passed
-support-eval: 3/3 passed
-```
+On the current 53-case benchmark:
 
-## Public Data Ingestion
+- the full harness reduced `risk_violation_rate` from `1.00` to `0.00`
+- `tool_grounding_rate` reached `1.00`
+- `policy_coverage_rate` reached `1.00`
+- `gate_action_accuracy` reached `1.00`
+- the 8 memory-stress cases reached `context_carryover_accuracy = 1.00`
+- `intent_switch_accuracy = 1.00`
+- `memory_pollution_rate = 0.00`
 
-The project can optionally ingest a public Hugging Face Bitext customer-support dataset. It is used only as public utterance/response examples, not as real user logs or real platform policy.
+## Streamlit Risk Dashboard
 
-```powershell
-python scripts\ingest_bitext_public.py --download --limit 500 --merge-policy-kb
-```
+`app/streamlit_risk_dashboard.py` is a lightweight view layer for the same offline artifacts.
 
-Generated files:
+Tabs:
 
-- `examples/public_support_utterances.jsonl`
-- `examples/support_augmented_kb.jsonl`
-- `data/source_registry/bitext_customer_support.json`
+- Agent Harness Demo
+- Risk Evaluation Dashboard
+- Transcript Replay
+- Failure Analysis
 
-## Evidence Boundaries
+The dashboard reads the evaluation outputs and does not call external APIs.
 
-Safe claims:
+## Resume Summary
 
-- Local runnable course-support Agent Harness prototype.
-- DeepSeek online demo for customer-facing response generation.
-- Router / Monitor / Resolver workflow.
-- RAG policy-topic coverage and metadata backfill.
-- Skills Playbook for intent-specific risk, required tools, and required policy topics.
-- MCP-like in-process tool gateway with allow-list and audit.
-- Risk gates for PII, invoice promise, refund eligibility, ticket id grounding, and access reset overclaim.
-- Four-layer memory and working-memory compaction.
-- End-to-end regression tests and `support-eval`.
+See `docs/resume_project.md` for a resume-ready 4-bullet summary with the real numbers used in this repo.
 
-Do not claim:
+## Notes
 
-- Production deployment.
-- Real users, real order data, or real invoice records.
-- Full MCP SDK/server integration.
-- GraphRAG or SupportOps benchmark results.
-- Formal answer-faithfulness proof. Resolver grounding is constrained by prompt contract, Gate rules, and regression tests.
-- High concurrency.
-- Completed LoRA/SFT training.
-- Accuracy, cost, or latency improvement percentages without a measured baseline.
-
-## Key Files
-
-- `agent_harness/control_plane/support_runner.py`: support workflow control plane.
-- `agent_harness/control_plane/support_gates.py`: Risk Gate, PII Guard, and grounding checks.
-- `agent_harness/sub_agents/support_agents.py`: Router, Monitor, Resolver.
-- `agent_harness/skills/support_playbooks.py`: deterministic business playbooks.
-- `agent_harness/mcp/support_gateway.py`: MCP-like business tools.
-- `agent_harness/memory/store.py`: four-layer memory.
-- `agent_harness/rag/store.py`: JSONL vector store and retrieval pipeline.
-- `agent_harness/evaluation/support_eval.py`: business regression evaluation, not a benchmark.
-- `docs/online_validation_notes.md`: online bad cases and fixes.
-- `docs/data_ingestion.md`: safe public-data ingestion boundary.
-- `output/12_final_resume_agent_harness.md`: resume-ready project content.
+- `runs/` and `.\.pytest_tmp\` are ignored and should not be committed
+- no real user data is used anywhere in this repository
+- no production deployment is included
+- no live database connection is required
